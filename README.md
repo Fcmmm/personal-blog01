@@ -67,6 +67,12 @@ npm run build
 
 构建产物会生成在 `dist` 目录。
 
+## 国内访问推荐
+
+Vercel 在国内访问可能较慢。国内访问优先推荐部署到腾讯云 EdgeOne Pages，项目已提供 [edgeone.json](F:/IDEA_project/Blog01/edgeone.json) 配置。
+
+详细步骤见 [DEPLOY_CN.md](F:/IDEA_project/Blog01/DEPLOY_CN.md)。
+
 ### Vercel
 
 - Framework Preset: `Vite`
