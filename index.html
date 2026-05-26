@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="一个简洁、流畅、可部署的个人博客与日记应用。" />
+    <title>风过留声 | Personal Blog</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="#" aria-label="返回首页">
+          <span class="brand-mark"></span>
+          <span>风过留声</span>
+        </a>
+        <nav class="top-nav" aria-label="主导航">
+          <a href="#entries">日记</a>
+          <a href="#compose">写一篇</a>
+          <button class="ghost-button" id="authButton" type="button">登录</button>
+          <button class="ghost-button" id="themeToggle" type="button" aria-label="切换主题">
+            <span class="sun-icon"></span>
+          </button>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero-section" aria-labelledby="heroTitle">
+          <div class="hero-copy">
+            <p class="eyebrow">Personal Journal</p>
+            <h1 id="heroTitle">把日常，写成一束安静的光。</h1>
+            <p class="hero-subtitle">
+              上传照片，记录心情，整理每一天闪过的片刻。所有内容会保存在当前浏览器里，可随时导出备份。
+            </p>
+            <div class="hero-actions">
+              <a class="primary-button" href="#compose">开始写日记</a>
+              <button class="secondary-button" id="exportButton" type="button">导出备份</button>
+              <label class="secondary-button file-import">
+                导入备份
+                <input id="importInput" type="file" accept="application/json" />
+              </label>
+            </div>
+          </div>
+          <div class="hero-visual" aria-label="博客照片墙">
+            <div class="photo-card photo-card-large"></div>
+            <div class="photo-card photo-card-small top"></div>
+            <div class="photo-card photo-card-small bottom"></div>
+          </div>
+        </section>
+
+        <section class="stats-strip" aria-label="博客统计">
+          <article>
+            <span id="entryCount">0</span>
+            <p>篇日记</p>
+          </article>
+          <article>
+            <span id="photoCount">0</span>
+            <p>张照片</p>
+          </article>
+          <article>
+            <span id="lastUpdated">今天</span>
+            <p>最近更新</p>
+          </article>
+        </section>
+
+        <section class="auth-section" id="authPanel" hidden>
+          <div>
+            <p class="eyebrow">Cloud</p>
+            <h2>云端写作</h2>
+            <p id="cloudStatus">当前使用本地模式。配置 Supabase 后，可登录并把日记与图片保存到云端。</p>
+          </div>
+          <form class="auth-form" id="authForm">
+            <label>
+              邮箱
+              <input id="emailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+            </label>
+            <button class="primary-button" type="submit">发送登录链接</button>
+          </form>
+          <button class="secondary-button" id="logoutButton" type="button" hidden>退出登录</button>
+        </section>
+
+        <section class="compose-section" id="compose" aria-labelledby="composeTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Compose</p>
+            <h2 id="composeTitle">写一篇新的日记</h2>
+          </div>
+
+          <form class="editor" id="entryForm">
+            <div class="form-grid">
+              <label>
+                标题
+                <input id="titleInput" name="title" type="text" placeholder="今天想记住什么？" required />
+              </label>
+              <label>
+                心情
+                <select id="moodInput" name="mood">
+                  <option value="平静">平静</option>
+                  <option value="开心">开心</option>
+                  <option value="思考">思考</option>
+                  <option value="疲惫">疲惫</option>
+                  <option value="感恩">感恩</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="inline-check">
+              <input id="publicInput" type="checkbox" checked />
+              <span>公开显示在博客归档中</span>
+            </label>
+
+            <label>
+              正文
+              <textarea
+                id="contentInput"
+                name="content"
+                rows="8"
+                placeholder="写下今天发生的小事、想法或一段私人独白..."
+                required
+              ></textarea>
+            </label>
+
+            <div class="upload-panel">
+              <label class="upload-box" for="imageInput">
+                <input id="imageInput" type="file" accept="image/*" />
+                <span class="upload-icon"></span>
+                <strong>上传封面图片</strong>
+                <small>支持 JPG、PNG、WebP，图片会随日记保存在浏览器中</small>
+              </label>
+              <div class="image-preview" id="imagePreview" aria-live="polite">
+                <span>未选择图片</span>
+              </div>
+            </div>
+
+            <div class="editor-actions">
+              <button class="primary-button" type="submit">发布日记</button>
+              <button class="text-button" id="resetButton" type="button">清空</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="entries-section" id="entries" aria-labelledby="entriesTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Archive</p>
+            <h2 id="entriesTitle">日记归档</h2>
+          </div>
+          <div class="toolbar">
+            <input id="searchInput" type="search" placeholder="搜索标题、正文或心情" />
+            <select id="sortInput" aria-label="排序方式">
+              <option value="newest">最新优先</option>
+              <option value="oldest">最早优先</option>
+              <option value="title">标题排序</option>
+            </select>
+          </div>
+          <div class="entries-grid" id="entriesGrid"></div>
+          <p class="empty-state" id="emptyState">还没有日记。第一篇通常不用完美，只要真实。</p>
+        </section>
+      </main>
+    </div>
+
+    <template id="entryTemplate">
+      <article class="entry-card">
+        <div class="entry-image"></div>
+        <div class="entry-body">
+          <div class="entry-meta">
+            <span class="entry-date"></span>
+            <span class="entry-mood"></span>
+          </div>
+          <h3></h3>
+          <p></p>
+          <div class="entry-actions">
+            <button class="text-button delete-entry" type="button">删除</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
