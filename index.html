@@ -22,7 +22,7 @@
         </a>
         <nav class="top-nav" aria-label="主导航">
           <a href="#entries">日记</a>
-          <a href="#compose">写一篇</a>
+          <a href="#compose" id="writeNavLink">写一篇</a>
           <button class="ghost-button" id="authButton" type="button">登录</button>
           <button class="ghost-button" id="themeToggle" type="button" aria-label="切换主题">
             <span class="sun-icon"></span>
@@ -36,10 +36,10 @@
             <p class="eyebrow">Personal Journal</p>
             <h1 id="heroTitle">把日常，写成一束安静的光。</h1>
             <p class="hero-subtitle">
-              上传照片，记录心情，整理每一天闪过的片刻。所有内容会保存在当前浏览器里，可随时导出备份。
+              上传照片，记录心情，整理每一天闪过的片刻。访客可以阅读公开日记，管理员登录后可以写作与编辑。
             </p>
             <div class="hero-actions">
-              <a class="primary-button" href="#compose">开始写日记</a>
+              <a class="primary-button" href="#compose" id="heroWriteLink">开始写日记</a>
               <button class="secondary-button" id="exportButton" type="button">导出备份</button>
               <label class="secondary-button file-import">
                 导入备份
@@ -69,23 +69,13 @@
           </article>
         </section>
 
-        <section class="auth-section" id="authPanel" hidden>
-          <div>
-            <p class="eyebrow">Cloud</p>
-            <h2>云端写作</h2>
-            <p id="cloudStatus">当前使用本地模式。配置 Supabase 后，可登录并把日记与图片保存到云端。</p>
-          </div>
-          <form class="auth-form" id="authForm">
-            <label>
-              邮箱
-              <input id="emailInput" type="email" placeholder="you@example.com" autocomplete="email" />
-            </label>
-            <button class="primary-button" type="submit">发送登录链接</button>
-          </form>
-          <button class="secondary-button" id="logoutButton" type="button" hidden>退出登录</button>
+        <section class="admin-status" id="adminStatus" hidden>
+          <p class="eyebrow">Dashboard</p>
+          <h2>写作后台</h2>
+          <p id="cloudStatus">登录后才会显示编辑页面。</p>
         </section>
 
-        <section class="compose-section" id="compose" aria-labelledby="composeTitle">
+        <section class="compose-section" id="compose" aria-labelledby="composeTitle" hidden>
           <div class="section-heading">
             <p class="eyebrow">Compose</p>
             <h2 id="composeTitle">写一篇新的日记</h2>
@@ -130,7 +120,7 @@
                 <input id="imageInput" type="file" accept="image/*" />
                 <span class="upload-icon"></span>
                 <strong>上传封面图片</strong>
-                <small>支持 JPG、PNG、WebP，图片会随日记保存在浏览器中</small>
+                <small>支持 JPG、PNG、WebP。编辑日记时不重新选择图片则保留原图。</small>
               </label>
               <div class="image-preview" id="imagePreview" aria-live="polite">
                 <span>未选择图片</span>
@@ -138,7 +128,8 @@
             </div>
 
             <div class="editor-actions">
-              <button class="primary-button" type="submit">发布日记</button>
+              <button class="primary-button" id="submitEntryButton" type="submit">发布日记</button>
+              <button class="secondary-button" id="cancelEditButton" type="button" hidden>取消编辑</button>
               <button class="text-button" id="resetButton" type="button">清空</button>
             </div>
           </form>
@@ -158,7 +149,7 @@
             </select>
           </div>
           <div class="entries-grid" id="entriesGrid"></div>
-          <p class="empty-state" id="emptyState">还没有日记。第一篇通常不用完美，只要真实。</p>
+          <p class="empty-state" id="emptyState">还没有公开日记。</p>
         </section>
       </main>
     </div>
@@ -174,11 +165,60 @@
           <h3></h3>
           <p></p>
           <div class="entry-actions">
-            <button class="text-button delete-entry" type="button">删除</button>
+            <span class="entry-visibility"></span>
+            <div class="entry-tools">
+              <button class="text-button edit-entry" type="button">编辑</button>
+              <button class="text-button delete-entry" type="button">删除</button>
+            </div>
           </div>
         </div>
       </article>
     </template>
+
+    <div class="auth-modal" id="authModal" hidden>
+      <div class="auth-backdrop" id="authBackdrop"></div>
+      <section class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <button class="modal-close" id="closeAuthButton" type="button" aria-label="关闭登录框">×</button>
+        <p class="eyebrow">Account</p>
+        <h2 id="authTitle">登录后台</h2>
+        <p class="auth-hint">管理员登录后可以发布、编辑和设置日记权限。</p>
+
+        <div class="auth-tabs" role="tablist" aria-label="登录方式">
+          <button class="auth-tab active" data-auth-tab="password" type="button">账号密码</button>
+          <button class="auth-tab" data-auth-tab="phone" type="button">手机验证码</button>
+        </div>
+
+        <form class="auth-form active" id="passwordAuthForm" data-auth-panel="password">
+          <label>
+            邮箱
+            <input id="loginEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <label>
+            密码
+            <input id="loginPasswordInput" type="password" placeholder="请输入密码" autocomplete="current-password" />
+          </label>
+          <div class="auth-actions">
+            <button class="primary-button" id="passwordLoginButton" type="submit">登录</button>
+            <button class="secondary-button" id="passwordSignupButton" type="button">注册账号</button>
+          </div>
+        </form>
+
+        <form class="auth-form" id="phoneAuthForm" data-auth-panel="phone">
+          <label>
+            手机号
+            <input id="phoneInput" type="tel" placeholder="+8613812345678" autocomplete="tel" />
+          </label>
+          <label>
+            验证码
+            <input id="phoneCodeInput" type="text" inputmode="numeric" placeholder="短信验证码" />
+          </label>
+          <div class="auth-actions">
+            <button class="secondary-button" id="sendPhoneCodeButton" type="button">发送验证码</button>
+            <button class="primary-button" type="submit">验证登录</button>
+          </div>
+        </form>
+      </section>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/app.js"></script>

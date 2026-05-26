@@ -5,13 +5,19 @@ const STORE_NAME = "entries";
 const DB_VERSION = 1;
 
 const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 const form = $("#entryForm");
+const composeSection = $("#compose");
+const adminStatus = $("#adminStatus");
 const titleInput = $("#titleInput");
 const moodInput = $("#moodInput");
 const contentInput = $("#contentInput");
+const publicInput = $("#publicInput");
 const imageInput = $("#imageInput");
 const imagePreview = $("#imagePreview");
+const submitEntryButton = $("#submitEntryButton");
+const cancelEditButton = $("#cancelEditButton");
 const entriesGrid = $("#entriesGrid");
 const entryTemplate = $("#entryTemplate");
 const emptyState = $("#emptyState");
@@ -20,10 +26,17 @@ const sortInput = $("#sortInput");
 const toast = $("#toast");
 const themeToggle = $("#themeToggle");
 const authButton = $("#authButton");
-const authPanel = $("#authPanel");
-const authForm = $("#authForm");
-const emailInput = $("#emailInput");
-const logoutButton = $("#logoutButton");
+const authModal = $("#authModal");
+const authBackdrop = $("#authBackdrop");
+const closeAuthButton = $("#closeAuthButton");
+const passwordAuthForm = $("#passwordAuthForm");
+const passwordSignupButton = $("#passwordSignupButton");
+const loginEmailInput = $("#loginEmailInput");
+const loginPasswordInput = $("#loginPasswordInput");
+const phoneAuthForm = $("#phoneAuthForm");
+const phoneInput = $("#phoneInput");
+const phoneCodeInput = $("#phoneCodeInput");
+const sendPhoneCodeButton = $("#sendPhoneCodeButton");
 const cloudStatus = $("#cloudStatus");
 const exportButton = $("#exportButton");
 const importInput = $("#importInput");
@@ -31,12 +44,15 @@ const resetButton = $("#resetButton");
 const entryCount = $("#entryCount");
 const photoCount = $("#photoCount");
 const lastUpdated = $("#lastUpdated");
-const publicInput = $("#publicInput");
+const writeNavLink = $("#writeNavLink");
+const heroWriteLink = $("#heroWriteLink");
 
 let selectedImage = "";
 let selectedFile = null;
 let entries = [];
 let currentUser = null;
+let isAdmin = false;
+let editingId = null;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -113,17 +129,28 @@ function normalizeCloudEntry(entry) {
     isPublic: entry.is_public,
     ownerId: entry.owner_id,
     createdAt: entry.created_at,
+    updatedAt: entry.updated_at,
   };
 }
 
 async function loadCloudEntries() {
   const { data, error } = await supabase
     .from("diary_entries")
-    .select("id, owner_id, title, mood, content, image_url, image_path, is_public, created_at")
+    .select("id, owner_id, title, mood, content, image_url, image_path, is_public, created_at, updated_at")
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return data.map(normalizeCloudEntry);
+}
+
+async function refreshAdminFlag() {
+  if (!isCloudConfigured || !currentUser) {
+    isAdmin = !isCloudConfigured;
+    return;
+  }
+
+  const { data, error } = await supabase.from("app_admins").select("user_id").eq("user_id", currentUser.id).maybeSingle();
+  isAdmin = Boolean(data && !error);
 }
 
 async function uploadCloudImage(file) {
@@ -154,10 +181,43 @@ async function saveCloudEntry(entry) {
       image_path: entry.imagePath,
       is_public: entry.isPublic,
     })
-    .select("id, owner_id, title, mood, content, image_url, image_path, is_public, created_at")
+    .select("id, owner_id, title, mood, content, image_url, image_path, is_public, created_at, updated_at")
     .single();
 
   if (error) throw error;
+  return normalizeCloudEntry(data);
+}
+
+async function updateCloudEntry(entry, previousEntry) {
+  let nextImage = previousEntry.image;
+  let nextImagePath = previousEntry.imagePath;
+
+  if (selectedFile) {
+    const uploaded = await uploadCloudImage(selectedFile);
+    nextImage = uploaded.imageUrl;
+    nextImagePath = uploaded.imagePath;
+  }
+
+  const { data, error } = await supabase
+    .from("diary_entries")
+    .update({
+      title: entry.title,
+      mood: entry.mood,
+      content: entry.content,
+      image_url: nextImage,
+      image_path: nextImagePath,
+      is_public: entry.isPublic,
+    })
+    .eq("id", previousEntry.id)
+    .select("id, owner_id, title, mood, content, image_url, image_path, is_public, created_at, updated_at")
+    .single();
+
+  if (error) throw error;
+
+  if (selectedFile && previousEntry.imagePath) {
+    await supabase.storage.from(IMAGE_BUCKET).remove([previousEntry.imagePath]);
+  }
+
   return normalizeCloudEntry(data);
 }
 
@@ -193,6 +253,15 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.remove("visible"), 2400);
 }
 
+function openAuthModal() {
+  authModal.hidden = false;
+  loginEmailInput.focus();
+}
+
+function closeAuthModal() {
+  authModal.hidden = true;
+}
+
 function escapeText(value) {
   return value.replace(/[&<>"']/g, (char) => {
     const entities = {
@@ -206,11 +275,16 @@ function escapeText(value) {
   });
 }
 
+function canManage() {
+  return !isCloudConfigured || isAdmin;
+}
+
 function getFilteredEntries() {
   const query = searchInput.value.trim().toLowerCase();
   const filtered = entries.filter((entry) => {
+    const visibleToVisitor = canManage() || entry.isPublic !== false;
     const haystack = `${entry.title} ${entry.content} ${entry.mood}`.toLowerCase();
-    return haystack.includes(query);
+    return visibleToVisitor && haystack.includes(query);
   });
 
   return filtered.sort((a, b) => {
@@ -220,35 +294,43 @@ function getFilteredEntries() {
   });
 }
 
-function canWrite() {
-  return !isCloudConfigured || Boolean(currentUser);
-}
-
 function updateAuthUi() {
   const cloudEnabled = isCloudConfigured;
-  authButton.textContent = cloudEnabled && currentUser ? "云端已登录" : "登录";
-  authForm.hidden = !cloudEnabled || Boolean(currentUser);
-  logoutButton.hidden = !cloudEnabled || !currentUser;
-  cloudStatus.textContent = cloudEnabled
-    ? currentUser
-      ? `已登录：${currentUser.email}。文章和图片会保存到 Supabase 云端。`
-      : "当前已启用 Supabase 云端模式。登录后可发布、上传图片和删除自己的文章。"
-    : "当前使用本地模式。配置 Supabase 后，可登录并把日记与图片保存到云端。";
+  const manager = canManage();
 
-  form.classList.toggle("locked", !canWrite());
-  form.querySelectorAll("input, select, textarea, button").forEach((element) => {
-    element.disabled = !canWrite();
-  });
+  authButton.hidden = !cloudEnabled;
+  authButton.textContent = currentUser ? "退出登录" : "登录";
+  composeSection.hidden = !manager;
+  adminStatus.hidden = !cloudEnabled || !currentUser;
+  writeNavLink.hidden = !manager;
+  heroWriteLink.hidden = !manager;
+  exportButton.hidden = cloudEnabled;
+  importInput.closest("label").hidden = cloudEnabled;
+
+  if (!cloudEnabled) {
+    cloudStatus.textContent = "当前是本地模式。配置 Supabase 后会启用线上登录与权限。";
+    return;
+  }
+
+  if (!currentUser) {
+    cloudStatus.textContent = "访客模式：只能阅读公开日记。登录管理员账号后会显示编辑页面。";
+    return;
+  }
+
+  cloudStatus.textContent = isAdmin
+    ? `已登录管理员：${currentUser.email || currentUser.phone || currentUser.id}`
+    : "已登录，但当前账号不是管理员。请把该用户加入 Supabase 的 app_admins 表。";
 }
 
 function updateStats() {
-  entryCount.textContent = entries.length;
-  photoCount.textContent = entries.filter((entry) => entry.image).length;
-  if (!entries.length) {
+  const visibleEntries = entries.filter((entry) => canManage() || entry.isPublic !== false);
+  entryCount.textContent = visibleEntries.length;
+  photoCount.textContent = visibleEntries.filter((entry) => entry.image).length;
+  if (!visibleEntries.length) {
     lastUpdated.textContent = "今天";
     return;
   }
-  const latest = [...entries].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const latest = [...visibleEntries].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
   lastUpdated.textContent = formatDate(latest.createdAt);
 }
 
@@ -264,6 +346,8 @@ function renderEntries() {
     const content = card.querySelector("p");
     const date = card.querySelector(".entry-date");
     const mood = card.querySelector(".entry-mood");
+    const visibility = card.querySelector(".entry-visibility");
+    const editButton = card.querySelector(".edit-entry");
     const deleteButton = card.querySelector(".delete-entry");
 
     card.style.animationDelay = `${Math.min(index * 70, 420)}ms`;
@@ -278,8 +362,14 @@ function renderEntries() {
     content.innerHTML = escapeText(entry.content).replace(/\n/g, "<br />");
     date.textContent = formatDate(entry.createdAt);
     mood.textContent = entry.mood;
-    deleteButton.hidden = !canWrite();
+    visibility.textContent = entry.isPublic === false ? "私密" : "公开";
+    visibility.hidden = !canManage();
+
+    editButton.hidden = !canManage();
+    deleteButton.hidden = !canManage();
+    editButton.addEventListener("click", () => startEdit(entry));
     deleteButton.addEventListener("click", async () => {
+      if (!window.confirm("确定删除这篇日记吗？")) return;
       if (isCloudConfigured) {
         await deleteCloudEntry(entry);
       } else {
@@ -296,45 +386,91 @@ function renderEntries() {
 }
 
 function resetForm() {
+  editingId = null;
   form.reset();
   selectedImage = "";
   selectedFile = null;
   imagePreview.innerHTML = "<span>未选择图片</span>";
   imagePreview.classList.remove("filled");
+  submitEntryButton.textContent = "发布日记";
+  cancelEditButton.hidden = true;
+}
+
+function startEdit(entry) {
+  editingId = entry.id;
+  titleInput.value = entry.title;
+  moodInput.value = entry.mood;
+  contentInput.value = entry.content;
+  publicInput.checked = entry.isPublic !== false;
+  selectedImage = entry.image || "";
+  selectedFile = null;
+  imageInput.value = "";
+  submitEntryButton.textContent = "保存修改";
+  cancelEditButton.hidden = false;
+
+  if (entry.image) {
+    imagePreview.innerHTML = `<img src="${entry.image}" alt="当前封面图片" />`;
+    imagePreview.classList.add("filled");
+  } else {
+    imagePreview.innerHTML = "<span>未选择图片</span>";
+    imagePreview.classList.remove("filled");
+  }
+
+  composeSection.hidden = false;
+  composeSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
 
-  if (!canWrite()) {
-    showToast("请先登录后再发布");
-    authPanel.hidden = false;
+  if (!canManage()) {
+    showToast("请先登录管理员账号");
+    openAuthModal();
     return;
   }
 
-  const imageData = isCloudConfigured
-    ? await uploadCloudImage(selectedFile)
-    : { imageUrl: selectedImage, imagePath: "" };
+  const previousEntry = editingId ? entries.find((entry) => entry.id === editingId) : null;
+  const imageData = !editingId
+    ? isCloudConfigured
+      ? await uploadCloudImage(selectedFile)
+      : { imageUrl: selectedImage, imagePath: "" }
+    : { imageUrl: previousEntry?.image || selectedImage, imagePath: previousEntry?.imagePath || "" };
 
   const draft = {
-    id: crypto.randomUUID(),
+    id: editingId || crypto.randomUUID(),
     title: titleInput.value.trim(),
     mood: moodInput.value,
     content: contentInput.value.trim(),
     image: imageData.imageUrl,
     imagePath: imageData.imagePath,
     isPublic: publicInput.checked,
-    createdAt: new Date().toISOString(),
+    createdAt: previousEntry?.createdAt || new Date().toISOString(),
   };
 
-  const entry = isCloudConfigured ? await saveCloudEntry(draft) : draft;
-  if (!isCloudConfigured) await saveLocalEntry(entry);
+  const savedEntry = editingId
+    ? isCloudConfigured
+      ? await updateCloudEntry(draft, previousEntry)
+      : draft
+    : isCloudConfigured
+      ? await saveCloudEntry(draft)
+      : draft;
+  const wasEditing = Boolean(editingId);
 
-  entries = [entry, ...entries];
+  if (isCloudConfigured) {
+    entries = editingId
+      ? entries.map((entry) => (entry.id === savedEntry.id ? savedEntry : entry))
+      : [savedEntry, ...entries];
+  } else {
+    await saveLocalEntry(savedEntry);
+    entries = editingId
+      ? entries.map((entry) => (entry.id === savedEntry.id ? savedEntry : entry))
+      : [savedEntry, ...entries];
+  }
+
   resetForm();
   updateStats();
   renderEntries();
-  showToast("日记已发布");
+  showToast(wasEditing ? "日记已保存" : "日记已发布");
 }
 
 async function handleImageChange() {
@@ -402,72 +538,164 @@ function initTheme() {
   setTheme(saved || (prefersDark ? "dark" : "light"));
 }
 
+async function refreshEntries() {
+  entries = isCloudConfigured ? await loadCloudEntries() : await loadLocalEntries();
+  updateStats();
+  renderEntries();
+}
+
 async function initAuth() {
   if (!isCloudConfigured) {
+    isAdmin = true;
     updateAuthUi();
     return;
   }
 
   const { data } = await supabase.auth.getSession();
   currentUser = data.session?.user || null;
-  supabase.auth.onAuthStateChange((_event, session) => {
-    currentUser = session?.user || null;
-    updateAuthUi();
-  });
+  await refreshAdminFlag();
   updateAuthUi();
+
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    await refreshAdminFlag();
+    updateAuthUi();
+    await refreshEntries();
+  });
 }
 
-async function sendLoginLink(event) {
+async function loginWithPassword(event) {
   event.preventDefault();
-  if (!isCloudConfigured) return;
 
-  const email = emailInput.value.trim();
-  if (!email) {
-    showToast("请输入邮箱");
+  const email = loginEmailInput.value.trim();
+  const password = loginPasswordInput.value;
+  if (!email || !password) {
+    showToast("请输入邮箱和密码");
     return;
   }
 
-  const { error } = await supabase.auth.signInWithOtp({
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    showToast("登录失败，请检查账号密码");
+    return;
+  }
+
+  closeAuthModal();
+  showToast("登录成功");
+}
+
+async function signupWithPassword() {
+  const email = loginEmailInput.value.trim();
+  const password = loginPasswordInput.value;
+  if (!email || !password) {
+    showToast("请输入邮箱和密码");
+    return;
+  }
+
+  const { error } = await supabase.auth.signUp({
     email,
+    password,
     options: {
       emailRedirectTo: window.location.origin,
     },
   });
 
   if (error) {
-    showToast("登录链接发送失败");
+    showToast("注册失败，请检查 Supabase 邮箱配置");
     return;
   }
 
-  emailInput.value = "";
-  showToast("登录链接已发送，请查看邮箱");
+  showToast("注册成功。如需验证邮件，请先完成邮箱验证");
+}
+
+async function sendPhoneCode() {
+  const phone = phoneInput.value.trim();
+  if (!phone.startsWith("+")) {
+    showToast("手机号请使用国际格式，例如 +8613812345678");
+    return;
+  }
+
+  const { error } = await supabase.auth.signInWithOtp({ phone });
+  if (error) {
+    showToast("验证码发送失败，请检查 Supabase 手机短信配置");
+    return;
+  }
+
+  showToast("验证码已发送");
+}
+
+async function verifyPhoneCode(event) {
+  event.preventDefault();
+
+  const phone = phoneInput.value.trim();
+  const token = phoneCodeInput.value.trim();
+  if (!phone || !token) {
+    showToast("请输入手机号和验证码");
+    return;
+  }
+
+  const { error } = await supabase.auth.verifyOtp({
+    phone,
+    token,
+    type: "sms",
+  });
+
+  if (error) {
+    showToast("验证码错误或已过期");
+    return;
+  }
+
+  closeAuthModal();
+  showToast("登录成功");
 }
 
 async function logout() {
   if (!isCloudConfigured) return;
   await supabase.auth.signOut();
   currentUser = null;
+  isAdmin = false;
+  resetForm();
   updateAuthUi();
+  await refreshEntries();
   showToast("已退出登录");
+}
+
+function bindAuthTabs() {
+  $$(".auth-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      $$(".auth-tab").forEach((item) => item.classList.remove("active"));
+      $$(".auth-form[data-auth-panel]").forEach((panel) => panel.classList.remove("active"));
+      tab.classList.add("active");
+      $(`.auth-form[data-auth-panel="${tab.dataset.authTab}"]`).classList.add("active");
+    });
+  });
 }
 
 async function init() {
   initTheme();
   await initAuth();
-  entries = isCloudConfigured ? await loadCloudEntries() : await loadLocalEntries();
-  updateStats();
-  renderEntries();
+  await refreshEntries();
 
   form.addEventListener("submit", handleSubmit);
   authButton.addEventListener("click", () => {
-    authPanel.hidden = !authPanel.hidden;
+    if (currentUser) {
+      logout();
+    } else {
+      openAuthModal();
+    }
   });
-  authForm.addEventListener("submit", sendLoginLink);
-  logoutButton.addEventListener("click", logout);
+  authBackdrop.addEventListener("click", closeAuthModal);
+  closeAuthButton.addEventListener("click", closeAuthModal);
+  passwordAuthForm.addEventListener("submit", loginWithPassword);
+  passwordSignupButton.addEventListener("click", signupWithPassword);
+  sendPhoneCodeButton.addEventListener("click", sendPhoneCode);
+  phoneAuthForm.addEventListener("submit", verifyPhoneCode);
+  bindAuthTabs();
   imageInput.addEventListener("change", handleImageChange);
   searchInput.addEventListener("input", renderEntries);
   sortInput.addEventListener("change", renderEntries);
   resetButton.addEventListener("click", resetForm);
+  cancelEditButton.addEventListener("click", resetForm);
   exportButton.addEventListener("click", exportEntries);
   importInput.addEventListener("change", importEntries);
   themeToggle.addEventListener("click", () => {

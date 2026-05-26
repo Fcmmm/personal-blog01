@@ -30,7 +30,7 @@ npm.cmd run dev
 
 1. 在 Supabase 创建项目。
 2. 打开 Supabase SQL Editor，执行 `supabase/schema.sql`。
-3. 在 Authentication 里启用 Email 登录。
+3. 在 Authentication 里启用登录方式。
 4. 复制环境变量文件：
 
 ```bash
@@ -57,7 +57,66 @@ select id, email from auth.users order by created_at desc;
 insert into public.app_admins (user_id) values ('YOUR_USER_ID');
 ```
 
-完成后，文章和图片会保存到 Supabase。访客只能阅读公开日记，管理员可以发布和删除。
+完成后，文章和图片会保存到 Supabase。访客只能阅读公开日记，管理员可以发布、编辑和删除。
+
+## 登录方式配置
+
+当前登录弹窗支持两种方式：
+
+- 账号密码：邮箱 + 密码登录，也可以在弹窗里注册账号。
+- 手机验证码：手机号 + 短信验证码登录。
+
+### 邮箱账号密码
+
+进入 Supabase 后台：
+
+```text
+Authentication -> Providers -> Email
+```
+
+确认 Email provider 已启用。账号密码登录使用 Supabase Auth 的邮箱密码能力。
+
+如果开启了邮箱验证，新账号注册后需要先点邮件里的验证链接。
+
+### 手机验证码
+
+进入 Supabase 后台：
+
+```text
+Authentication -> Providers -> Phone
+```
+
+启用 Phone provider，并配置短信服务商。手机号需要使用国际格式，例如：
+
+```text
++8613812345678
+```
+
+如果没有配置短信服务商，页面会提示“验证码发送失败”。这是 Supabase 后台短信配置问题，不是前端代码问题。
+
+### 管理员权限
+
+登录成功后，只有加入 `app_admins` 表的用户才会看到编辑页面。查询用户 id：
+
+```sql
+select id, email, phone from auth.users order by created_at desc;
+```
+
+把管理员账号加入：
+
+```sql
+insert into public.app_admins (user_id) values ('YOUR_USER_ID');
+```
+
+管理员可以：
+
+- 发布日记
+- 修改标题、心情、正文
+- 替换封面图片
+- 修改公开/私密权限
+- 删除日记
+
+普通访客只能看到公开日记。
 
 ## 构建部署
 
